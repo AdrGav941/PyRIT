@@ -5,11 +5,11 @@ import logging
 import struct
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
-from typing import MutableSequence, Optional, Sequence
+from typing import Any, MutableSequence, Optional, Sequence, TypeVar, Union
 
 from azure.core.credentials import AccessToken
 from azure.identity import DefaultAzureCredential
-from sqlalchemy import MetaData, create_engine, event, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload, sessionmaker
@@ -18,10 +18,20 @@ from sqlalchemy.orm.session import Session
 from pyrit.common import default_values
 from pyrit.common.singleton import Singleton
 from pyrit.memory.memory_interface import MemoryInterface
-from pyrit.memory.memory_models import Base, EmbeddingDataEntry, PromptMemoryEntry
-from pyrit.models import AzureBlobStorageIO, PromptRequestPiece
+from pyrit.memory.memory_models import (
+    AttackResultEntry,
+    Base,
+    EmbeddingDataEntry,
+    PromptMemoryEntry,
+)
+from pyrit.models import (
+    AzureBlobStorageIO,
+    PromptRequestPiece,
+)
 
 logger = logging.getLogger(__name__)
+
+Model = TypeVar("Model")
 
 
 class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
@@ -80,7 +90,7 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
         super(AzureSQLMemory, self).__init__()
 
     @staticmethod
-    def _resolve_sas_token(env_var_name: str, passed_value: Optional[str]) -> Optional[str]:
+    def _resolve_sas_token(env_var_name: str, passed_value: Optional[str] = None) -> Optional[str]:
         """
         Resolve the SAS token value, allowing a fallback to None for delegation SAS.
 
@@ -102,7 +112,7 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
             container_url=self._results_container_url, sas_token=self._results_container_sas_token
         )
 
-    def _create_auth_token(self):
+    def _create_auth_token(self) -> None:
         """
         Creates an Azure Entra ID access token.
         Stores the token and its expiry time.
@@ -186,7 +196,7 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
         except Exception as e:
             logger.error(f"Error during table creation: {e}")
 
-    def _add_embeddings_to_memory(self, *, embedding_data: list[EmbeddingDataEntry]) -> None:
+    def _add_embeddings_to_memory(self, *, embedding_data: Sequence[EmbeddingDataEntry]) -> None:
         """
         Inserts embedding data into memory storage
         """
@@ -207,6 +217,22 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
             "ISJSON(orchestrator_identifier) = 1 AND JSON_VALUE(orchestrator_identifier, '$.id') = :json_id"
         ).bindparams(json_id=str(orchestrator_id))
 
+    def _get_metadata_conditions(self, *, prompt_metadata: dict[str, Union[str, int]]):
+        json_validation = "ISJSON(prompt_metadata) = 1"
+        json_conditions = " AND ".join([f"JSON_VALUE(prompt_metadata, '$.{key}') = :{key}" for key in prompt_metadata])
+        # Combine both conditions
+        conditions = f"{json_validation} AND {json_conditions}"
+
+        # Create SQL condition using SQLAlchemy's text() with bindparams
+        # for safe parameter passing, preventing SQL injection
+        return text(conditions).bindparams(**{key: str(value) for key, value in prompt_metadata.items()})
+
+    def _get_prompt_pieces_prompt_metadata_conditions(self, *, prompt_metadata: dict[str, Union[str, int]]):
+        return self._get_metadata_conditions(prompt_metadata=prompt_metadata)
+
+    def _get_seed_prompts_metadata_conditions(self, *, metadata: dict[str, Union[str, int]]):
+        return self._get_metadata_conditions(prompt_metadata=metadata)
+
     def add_request_pieces_to_memory(self, *, request_pieces: Sequence[PromptRequestPiece]) -> None:
         """
         Inserts a list of prompt request pieces into the memory storage.
@@ -222,11 +248,11 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
             self.engine.dispose()
             logger.info("Engine disposed successfully.")
 
-    def get_all_embeddings(self) -> list[EmbeddingDataEntry]:
+    def get_all_embeddings(self) -> Sequence[EmbeddingDataEntry]:
         """
         Fetches all entries from the specified table and returns them as model instances.
         """
-        result = self._query_entries(EmbeddingDataEntry)
+        result: Sequence[EmbeddingDataEntry] = self._query_entries(EmbeddingDataEntry)
         return result
 
     def _insert_entry(self, entry: Base) -> None:  # type: ignore
@@ -247,7 +273,7 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
     # The following methods are not part of MemoryInterface, but seem
     # common between SQLAlchemy-based implementations, regardless of engine.
     # Perhaps we should find a way to refactor
-    def _insert_entries(self, *, entries: list[Base]) -> None:  # type: ignore
+    def _insert_entries(self, *, entries: Sequence[Base]) -> None:  # type: ignore
         """Inserts multiple entries into the database."""
         with closing(self.get_session()) as session:
             try:
@@ -265,8 +291,13 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
         return self.SessionFactory()
 
     def _query_entries(
-        self, model, *, conditions: Optional = None, distinct: bool = False, join_scores: bool = False  # type: ignore
-    ) -> list[Base]:
+        self,
+        Model,
+        *,
+        conditions: Optional[Any] = None,  # type: ignore
+        distinct: bool = False,
+        join_scores: bool = False,
+    ) -> MutableSequence[Model]:
         """
         Fetches data from the specified table model with optional conditions.
 
@@ -281,16 +312,21 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
         """
         with closing(self.get_session()) as session:
             try:
-                query = session.query(model)
-                if join_scores and model == PromptMemoryEntry:
+                query = session.query(Model)
+                if join_scores and Model == PromptMemoryEntry:
                     query = query.options(joinedload(PromptMemoryEntry.scores))
+                elif Model == AttackResultEntry:
+                    query = query.options(
+                        joinedload(AttackResultEntry.last_response).joinedload(PromptMemoryEntry.scores),
+                        joinedload(AttackResultEntry.last_score),
+                    )
                 if conditions is not None:
                     query = query.filter(conditions)
                 if distinct:
                     return query.distinct().all()
                 return query.all()
             except SQLAlchemyError as e:
-                logger.exception(f"Error fetching data from table {model.__tablename__}: {e}")
+                logger.exception(f"Error fetching data from table {Model.__tablename__}: {e}")
                 return []
 
     def _update_entries(self, *, entries: MutableSequence[Base], update_fields: dict) -> bool:  # type: ignore
@@ -298,7 +334,7 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
         Updates the given entries with the specified field values.
 
         Args:
-            entries (list[Base]): A list of SQLAlchemy model instances to be updated.
+            entries (Sequence[Base]): A list of SQLAlchemy model instances to be updated.
             update_fields (dict): A dictionary of field names and their new values.
 
         Returns:
@@ -336,14 +372,3 @@ class AzureSQLMemory(MemoryInterface, metaclass=Singleton):
         Base.metadata.drop_all(self.engine)
         # Recreate the tables
         Base.metadata.create_all(self.engine, checkfirst=True)
-
-    def print_schema(self):
-        """Prints the schema of all tables in the Azure SQL database."""
-        metadata = MetaData()
-        metadata.reflect(bind=self.engine)
-
-        for table_name in metadata.tables:
-            table = metadata.tables[table_name]
-            print(f"Schema for {table_name}:")
-            for column in table.columns:
-                print(f"  Column {column.name} ({column.type})")

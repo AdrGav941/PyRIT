@@ -33,29 +33,19 @@
 # %%
 import os
 
-from pyrit.common import IN_MEMORY, initialize_pyrit
-
-initialize_pyrit(memory_db_type=IN_MEMORY)
-
 # Enter details of your AML workspace
 subscription_id = os.environ.get("AZURE_SUBSCRIPTION_ID")
 resource_group = os.environ.get("AZURE_RESOURCE_GROUP")
 workspace = os.environ.get("AZURE_ML_WORKSPACE_NAME")
-compute_name = os.environ.get("AZURE_ML_COMPUTE_NAME")
 print(workspace)
 
 # %%
 from azure.ai.ml import MLClient
-from azure.identity import DefaultAzureCredential
+from azure.identity import AzureCliCredential
 
 # Get a handle to the workspace
-ml_client = MLClient(DefaultAzureCredential(), subscription_id, resource_group, workspace)
-
-# %% [markdown]
-# ## Create Compute Cluster
-#
-# Before proceeding, create a compute cluster in Azure ML. The following command may be useful:
-# az ml compute create --size Standard_ND96isrf_H100_v5 --type AmlCompute --name <compute-name> -g <group> -w <workspace> --min-instances 0
+# For some people DefaultAzureCredential may work better than AzureCliCredential.
+ml_client = MLClient(AzureCliCredential(), subscription_id, resource_group, workspace)
 
 # %% [markdown]
 # ## Create AML Environment
@@ -65,7 +55,7 @@ ml_client = MLClient(DefaultAzureCredential(), subscription_id, resource_group, 
 # %%
 from pathlib import Path
 
-from azure.ai.ml.entities import BuildContext, Environment
+from azure.ai.ml.entities import BuildContext, Environment, JobResourceConfiguration
 
 from pyrit.common.path import HOME_PATH
 
@@ -84,7 +74,7 @@ ml_client.environments.create_or_update(env_docker_context)
 # ## Submit Training Job to AML
 
 # %% [markdown]
-# Finally, we configure the command to run the GCG algorithm. The entry file for the algorithm is [`run.py`](../../../pyrit/auxiliary_attacks/gcg/experiments/run.py), which takes several command line arguments, as shown below. We also have to specify the compute `instance_type` to run the algorithm on. In our experience, a GPU instance with at least 32GB of vRAM is required. In the example below, we use Standard_ND40rs_v2.
+# Finally, we configure the command to run the GCG algorithm. The entry file for the algorithm is [`run.py`](../../../pyrit/auxiliary_attacks/gcg/experiments/run.py), which takes several command line arguments, as shown below. We also have to specify the compute `instance_type` to run the algorithm on. In our experience, a GPU instance with at least 32GB of vRAM is required. In the example below, we use Standard_NC96ads_A100_v4.
 #
 # Depending on the compute instance you use, you may encounter "out of memory" errors. In this case, we recommend training on a smaller model or lowering `n_train_data` or `batch_size`.
 
@@ -104,19 +94,15 @@ job = command(
         "batch_size": 256,
     },
     environment=f"{env_docker_context.name}:{env_docker_context.version}",
-    environment_variables={"HF_TOKEN": os.environ["HF_TOKEN"]},
+    environment_variables={"HUGGINGFACE_TOKEN": os.environ["HUGGINGFACE_TOKEN"]},
     display_name="suffix_generation",
     description="Generate a suffix for attacking LLMs.",
-    compute=compute_name,
+    resources=JobResourceConfiguration(
+        instance_type="Standard_NC96ads_A100_v4",
+        instance_count=1,
+    ),
 )
 
 # %%
 # Submit the command
 returned_job = ml_client.create_or_update(job)
-
-# %%
-# Close connection
-from pyrit.memory import CentralMemory
-
-memory = CentralMemory.get_memory_instance()
-memory.dispose_engine()

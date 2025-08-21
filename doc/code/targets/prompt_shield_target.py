@@ -5,7 +5,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.4
+#       jupytext_version: 1.17.2
 #   kernelspec:
 #     display_name: pyrit-dev
 #     language: python
@@ -13,7 +13,7 @@
 # ---
 
 # %% [markdown]
-# # Prompt Shield Target Documentation + Tutorial - optional
+# # Prompt Shield Target - optional
 
 # %% [markdown]
 # This is a brief tutorial and documentation on using the Prompt Shield Target
@@ -74,7 +74,7 @@
 import os
 
 from pyrit.common import IN_MEMORY, initialize_pyrit
-from pyrit.orchestrator import PromptSendingOrchestrator
+from pyrit.executor.attack import ConsoleAttackResultPrinter, PromptSendingAttack
 from pyrit.prompt_target import PromptShieldTarget
 
 initialize_pyrit(memory_db_type=IN_MEMORY)
@@ -86,9 +86,6 @@ sample_prompt: str = """
 Hello! Can you please retrieve the total number of sales in the document?
 """
 
-orchestrator = PromptSendingOrchestrator(objective_target=pst)
-resp = await orchestrator.send_prompts_async(prompt_list=[sample_prompt])  # type: ignore
-await orchestrator.print_conversations_async()  # type: ignore
-
-# %%
-pst.dispose_db_engine()
+attack = PromptSendingAttack(objective_target=pst)
+result = await attack.execute_async(objective=sample_prompt)  # type: ignore
+await ConsoleAttackResultPrinter().print_conversation_async(result=result)  # type: ignore

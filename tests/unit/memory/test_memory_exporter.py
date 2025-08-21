@@ -3,6 +3,7 @@
 
 import csv
 import json
+from typing import Sequence
 
 import pytest
 from sqlalchemy.inspection import inspect
@@ -13,7 +14,7 @@ from pyrit.memory.memory_models import PromptMemoryEntry
 
 
 @pytest.fixture
-def sample_conversation_entries() -> list[PromptMemoryEntry]:
+def sample_conversation_entries() -> Sequence[PromptMemoryEntry]:
     return get_sample_conversation_entries()
 
 
@@ -89,3 +90,13 @@ def test_export_to_json_data_with_conversations(tmp_path, export_type):
     assert content[1]["role"] == "assistant"
     assert content[1]["converted_value"] == "I'm fine, thank you!"
     assert content[1]["conversation_id"] == conversation_id
+
+
+@pytest.mark.parametrize("export_type", ["json", "csv", "md"])
+def test_export_data_creates_file(tmp_path, export_type):
+    exporter = MemoryExporter()
+    file_path = tmp_path / f"conversations.{export_type}"
+    sample_conversation_entries = get_sample_conversations()
+    exporter.export_data(data=sample_conversation_entries, file_path=file_path, export_type=export_type)
+
+    assert file_path.exists()

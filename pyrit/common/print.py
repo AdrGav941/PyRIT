@@ -2,6 +2,7 @@
 # Licensed under the MIT license.
 
 import textwrap
+from typing import Optional
 
 import termcolor
 from typing import Literal
@@ -44,7 +45,7 @@ def print_chat_messages_with_color(
     Returns:
         None
     """
-    role_to_color: dict[str, Color] = {
+    role_to_color: dict[str, str] = {
         "system": "red",
         "user": "green",
         "assistant": "blue",
@@ -73,4 +74,4 @@ def print_chat_messages_with_color(
                 subsequent_indent=left_padding,
             )
         print("Message with role: " + message.role)
-        termcolor.cprint(output_message, color=role_to_color[message.role])
+        termcolor.cprint(output_message, color=role_to_color[message.role])  # type: ignore[arg-type]

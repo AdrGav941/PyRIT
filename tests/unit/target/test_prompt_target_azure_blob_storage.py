@@ -2,9 +2,11 @@
 # Licensed under the MIT license.
 
 import os
-from unittest.mock import AsyncMock, patch
+from typing import MutableSequence
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from azure.storage.blob.aio import BlobClient as AsyncBlobClient
 from azure.storage.blob.aio import ContainerClient as AsyncContainerClient
 from unit.mocks import get_sample_conversations
 
@@ -13,7 +15,7 @@ from pyrit.prompt_target import AzureBlobStorageTarget
 
 
 @pytest.fixture
-def sample_entries() -> list[PromptRequestPiece]:
+def sample_entries() -> MutableSequence[PromptRequestPiece]:
     return get_sample_conversations()
 
 
@@ -56,7 +58,9 @@ def test_initialization_with_no_container_url_raises():
 @patch("azure.storage.blob.aio.ContainerClient.upload_blob")
 @pytest.mark.asyncio
 async def test_azure_blob_storage_validate_request_length(
-    mock_upload_async, azure_blob_storage_target: AzureBlobStorageTarget, sample_entries: list[PromptRequestPiece]
+    mock_upload_async,
+    azure_blob_storage_target: AzureBlobStorageTarget,
+    sample_entries: MutableSequence[PromptRequestPiece],
 ):
     mock_upload_async.return_value = None
     request = PromptRequestResponse(request_pieces=sample_entries)
@@ -67,7 +71,9 @@ async def test_azure_blob_storage_validate_request_length(
 @patch("azure.storage.blob.aio.ContainerClient.upload_blob")
 @pytest.mark.asyncio
 async def test_azure_blob_storage_validate_prompt_type(
-    mock_upload_async, azure_blob_storage_target: AzureBlobStorageTarget, sample_entries: list[PromptRequestPiece]
+    mock_upload_async,
+    azure_blob_storage_target: AzureBlobStorageTarget,
+    sample_entries: MutableSequence[PromptRequestPiece],
 ):
     mock_upload_async.return_value = None
     request_piece = sample_entries[0]
@@ -80,7 +86,9 @@ async def test_azure_blob_storage_validate_prompt_type(
 @patch("azure.storage.blob.aio.ContainerClient.upload_blob")
 @pytest.mark.asyncio
 async def test_azure_blob_storage_validate_prev_convs(
-    mock_upload_async, azure_blob_storage_target: AzureBlobStorageTarget, sample_entries: list[PromptRequestPiece]
+    mock_upload_async,
+    azure_blob_storage_target: AzureBlobStorageTarget,
+    sample_entries: MutableSequence[PromptRequestPiece],
 ):
     mock_upload_async.return_value = None
     request_piece = sample_entries[0]
@@ -94,15 +102,22 @@ async def test_azure_blob_storage_validate_prev_convs(
 
 
 @pytest.mark.asyncio
-@patch.object(AsyncContainerClient, "upload_blob", new_callable=AsyncMock)
 @patch.object(AzureBlobStorageTarget, "_create_container_client_async", new_callable=AsyncMock)
+@patch.object(AsyncBlobClient, "upload_blob", new_callable=AsyncMock)
+@patch.object(AsyncContainerClient, "get_blob_client", new_callable=MagicMock)
 async def test_send_prompt_async(
-    mock_create_client,
+    mock_get_blob_client,
     mock_upload_blob,
+    mock_create_client,
     azure_blob_storage_target: AzureBlobStorageTarget,
-    sample_entries: list[PromptRequestPiece],
+    sample_entries: MutableSequence[PromptRequestPiece],
 ):
+    mock_blob_client = AsyncMock()
+    mock_get_blob_client.return_value = mock_blob_client
+
+    mock_blob_client.upload_blob = mock_upload_blob
     mock_upload_blob.return_value = None
+
     azure_blob_storage_target._client_async = AsyncContainerClient.from_container_url(
         container_url=azure_blob_storage_target._container_url, credential="mocked_sas_token"
     )
@@ -112,8 +127,9 @@ async def test_send_prompt_async(
     request = PromptRequestResponse([request_piece])
 
     response = await azure_blob_storage_target.send_prompt_async(prompt_request=request)
+
     assert response
-    blob_url = response.request_pieces[0].converted_value
+    blob_url = response.get_value()
     assert azure_blob_storage_target._container_url in blob_url
     assert blob_url.endswith(".txt")
     mock_upload_blob.assert_awaited_once()

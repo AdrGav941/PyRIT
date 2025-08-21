@@ -3,6 +3,7 @@
 
 import pathlib
 import uuid
+from typing import Optional
 
 from pyrit.common.path import DATASETS_PATH
 from pyrit.models import SeedPrompt
@@ -17,7 +18,16 @@ from pyrit.prompt_target import PromptChatTarget
 
 
 class FuzzerExpandConverter(FuzzerConverter):
-    def __init__(self, *, converter_target: PromptChatTarget, prompt_template: SeedPrompt = None):
+    """
+    Generates versions of a prompt with new, prepended sentences.
+    """
+
+    def __init__(
+        self,
+        *,
+        converter_target: PromptChatTarget,
+        prompt_template: Optional[SeedPrompt] = None,
+    ):
         prompt_template = (
             prompt_template
             if prompt_template
@@ -29,7 +39,7 @@ class FuzzerExpandConverter(FuzzerConverter):
 
     async def convert_async(self, *, prompt: str, input_type: PromptDataType = "text") -> ConverterResult:
         """
-        Converter to generate versions of prompt with new, prepended sentences.
+        Converts the given prompt by generating versions of it with new, prepended sentences.
         """
         if not self.input_supported(input_type):
             raise ValueError("Input type not supported")
@@ -44,6 +54,7 @@ class FuzzerExpandConverter(FuzzerConverter):
 
         formatted_prompt = f"===={self.template_label} BEGINS====\n{prompt}\n===={self.template_label} ENDS===="
 
+        prompt_metadata: dict[str, str | int] = {"response_format": "json"}
         request = PromptRequestResponse(
             [
                 PromptRequestPiece(
@@ -56,6 +67,7 @@ class FuzzerExpandConverter(FuzzerConverter):
                     original_value_data_type=input_type,
                     converted_value_data_type=input_type,
                     converter_identifiers=[self.get_identifier()],
+                    prompt_metadata=prompt_metadata,
                 )
             ]
         )

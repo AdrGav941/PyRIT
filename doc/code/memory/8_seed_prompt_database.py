@@ -6,11 +6,11 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.4
+#       jupytext_version: 1.17.0
 #   kernelspec:
-#     display_name: pyrit-311
+#     display_name: pyrit-dev
 #     language: python
-#     name: pyrit-dev
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -37,12 +37,14 @@ from pyrit.common.path import DATASETS_PATH
 from pyrit.memory import CentralMemory
 from pyrit.models import SeedPromptDataset
 
-seed_prompt_dataset = SeedPromptDataset.from_yaml_file(pathlib.Path(DATASETS_PATH) / "seed_prompts" / "illegal.prompt")
+seed_prompt_dataset = SeedPromptDataset.from_yaml_file(
+    pathlib.Path(DATASETS_PATH) / "seed_prompts" / "illegal-multimodal-dataset.prompt"
+)
 
 print(seed_prompt_dataset.prompts[0])
 
 memory = CentralMemory.get_memory_instance()
-await memory.add_seed_prompts_to_memory(prompts=seed_prompt_dataset.prompts, added_by="test")  # type: ignore
+await memory.add_seed_prompts_to_memory_async(prompts=seed_prompt_dataset.prompts, added_by="test")  # type: ignore
 
 # %% [markdown]
 # ## Retrieving prompts from the database
@@ -53,18 +55,28 @@ await memory.add_seed_prompts_to_memory(prompts=seed_prompt_dataset.prompts, add
 memory.get_seed_prompt_dataset_names()
 
 # %% [markdown]
-# The dataset we just uploaded (called "test illegal") is also represented.
+# The dataset we just uploaded (called "2025_06_pyrit_illegal_multimodal_example") is also represented.
 # To get all seed prompts from that dataset, we can query as follows:
 
 # %%
-dataset_name = "test illegal"
+dataset_name = "2025_06_pyrit_illegal_multimodal_example"
 prompts = memory.get_seed_prompts(dataset_name=dataset_name)
 print(f"Total number of the prompts with dataset name '{dataset_name}':", len(prompts))
-if prompts:
-    print(prompts[0].__dict__)
+for prompt in prompts:
+    print(prompt.__dict__)
 
 # %% [markdown]
-# ## Adding seed prompt groups to the database
+# ## Adding multimodal Seed Prompt Groups to the database
+# In this next example, we will add a Seed Prompt Group with prompts across the audio, image, video, and text modalities.
+# Seed Prompts that have the same `prompt_group_alias` will be part of the same Seed Prompt Group. Within a Seed Prompt Group,
+# Seed Prompts that share a `sequence` will be sent together as part of the same turn (e.g. text and corresponding image).
+# <br> <center> <img src="../../../assets/seed_prompt.png" alt="SeedPrompt and SeedPromptGroup architecture" height="600" /> </center> </br>
+# When we add non-text seed prompts to memory, encoding data will automatically populate in the seed prompt's
+# `metadata` field, including `format` (i.e. png, mp4, wav, etc.) as well as additional metadata for audio
+# and video files, inclduing `bitrate` (kBits/s as int), `samplerate` (samples/second as int), `bitdepth` (as int),
+# `filesize` (bytes as int), and `duration` (seconds as int) if the file type is supported by TinyTag.
+# Example suppported file types include: MP3, MP4, M4A, and WAV. These may be helpful to filter for as some targets
+# have specific input prompt requirements.
 # %%
 import pathlib
 
@@ -72,7 +84,7 @@ from pyrit.common.path import DATASETS_PATH
 from pyrit.models import SeedPromptGroup
 
 seed_prompt_group = SeedPromptGroup.from_yaml_file(
-    pathlib.Path(DATASETS_PATH) / "seed_prompts" / "illegal-multimodal.prompt"
+    pathlib.Path(DATASETS_PATH) / "seed_prompts" / "illegal-multimodal-group.prompt"
 )
 
 await memory.add_seed_prompt_groups_to_memory(prompt_groups=[seed_prompt_group], added_by="test multimodal illegal")  # type: ignore
@@ -84,8 +96,16 @@ await memory.add_seed_prompt_groups_to_memory(prompt_groups=[seed_prompt_group],
 multimodal_dataset_name = "TestMultimodalTextImageAudioVideo"
 seed_prompt_groups = memory.get_seed_prompt_groups(dataset_name=multimodal_dataset_name)
 print(f"Total number of the seed prompt groups with dataset name '{multimodal_dataset_name}':", len(seed_prompt_groups))
-if seed_prompt_groups:
-    print(seed_prompt_groups[0].__dict__)
+# Retrieving the auto-populated metadata for each seed prompt in the multimodal seed prompt group.
+for seed_prompt in seed_prompt_group.prompts:
+    print(f"SeedPrompt value: {seed_prompt.value}, SeedPrompt metadata: {seed_prompt.metadata}")
+
+# %% [markdown]
+# ## Filtering seed prompts by metadata
+# %%
+# Filter by metadata to get seed prompts in .wav format and sample rate 24000 kBits/s
+memory.get_seed_prompts(metadata={"format": "wav", "samplerate": 24000})
+
 
 # %%
 from pyrit.memory import CentralMemory

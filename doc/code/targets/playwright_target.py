@@ -5,15 +5,11 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.4
-#   kernelspec:
-#     display_name: pyrit-dev
-#     language: python
-#     name: python3
+#       jupytext_version: 1.17.2
 # ---
 
 # %% [markdown]
-# # Playwright Target:
+# # Playwright Target - optional
 #
 # This notebook demonstrates how to interact with the **Playwright Target** in PyRIT.
 #
@@ -50,7 +46,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 
-def start_flask_app():
+def start_flask_app() -> subprocess.Popen:
     # Get the notebook's directory
     notebook_dir = os.getcwd()
 
@@ -94,7 +90,6 @@ from playwright.async_api import Page, async_playwright
 
 from pyrit.common import IN_MEMORY, initialize_pyrit
 from pyrit.models import PromptRequestPiece
-from pyrit.orchestrator import PromptSendingOrchestrator
 from pyrit.prompt_target import PlaywrightTarget
 
 initialize_pyrit(memory_db_type=IN_MEMORY)
@@ -134,31 +129,30 @@ async def interact_with_my_app(page: Page, request_piece: PromptRequestPiece) ->
 # ### Using `PlaywrightTarget` with the Interaction Function and Scorer
 #
 # Now, we can use the `PlaywrightTarget` by passing the interaction function we defined.
-# We'll use the `PromptSendingOrchestrator` to send prompts to the target and collects responses.
+# We'll use the `PromptSendingAttack` to send prompts to the target and collects responses.
 # %%
 import asyncio
 import sys
+
+from pyrit.executor.attack import ConsoleAttackResultPrinter, PromptSendingAttack
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 # Using PlaywrightTarget with the interaction function and scorer
-async def main(page: Page):
+async def main(page: Page) -> None:
     target = PlaywrightTarget(interaction_func=interact_with_my_app, page=page)
 
-    with PromptSendingOrchestrator(
-        objective_target=target,
-    ) as orchestrator:
-        all_prompts = [
-            "Tell me a joke about computer programming.",
-        ]
+    attack = PromptSendingAttack(objective_target=target)
 
-        await orchestrator.send_prompts_async(prompt_list=all_prompts)
-        await orchestrator.print_conversations_async()  # type: ignore
+    objective = "Tell me a joke about computer programming."
+
+    result = await attack.execute_async(objective=objective)  # type: ignore
+    await ConsoleAttackResultPrinter().print_conversation_async(result=result)  # type: ignore
 
 
-async def run():
+async def run() -> None:
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=False)
         context = await browser.new_context()

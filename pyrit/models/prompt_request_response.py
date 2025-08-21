@@ -1,9 +1,10 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 
-from typing import Dict, MutableSequence, Optional, Sequence
+from typing import Dict, MutableSequence, Optional, Sequence, Union
 
-from pyrit.models.literals import PromptDataType, PromptResponseError
+from pyrit.common.utils import combine_dict
+from pyrit.models.literals import ChatMessageRole, PromptDataType, PromptResponseError
 from pyrit.models.prompt_request_piece import PromptRequestPiece
 
 
@@ -14,11 +15,31 @@ class PromptRequestResponse:
     This is a single request to a target. It can contain multiple prompt request pieces.
 
     Parameters:
-        request_pieces (list[PromptRequestPiece]): The list of prompt request pieces.
+        request_pieces (Sequence[PromptRequestPiece]): The list of prompt request pieces.
     """
 
-    def __init__(self, request_pieces: list[PromptRequestPiece]):
+    def __init__(self, request_pieces: Sequence[PromptRequestPiece]):
         self.request_pieces = request_pieces
+
+    def get_value(self, n: int = 0) -> str:
+        """Return the converted value of the nth request piece."""
+        if n >= len(self.request_pieces):
+            raise IndexError(f"No request piece at index {n}.")
+        return self.request_pieces[n].converted_value
+
+    def get_values(self) -> list[str]:
+        """Return the converted values of all request pieces."""
+        return [request_piece.converted_value for request_piece in self.request_pieces]
+
+    def get_piece(self, n: int = 0) -> PromptRequestPiece:
+        """Return the nth request piece."""
+        if len(self.request_pieces) == 0:
+            raise ValueError("Empty request pieces.")
+
+        if n >= len(self.request_pieces):
+            raise IndexError(f"No request piece at index {n}.")
+
+        return self.request_pieces[n]
 
     def validate(self):
         """
@@ -28,19 +49,20 @@ class PromptRequestResponse:
             raise ValueError("Empty request pieces.")
 
         conversation_id = self.request_pieces[0].conversation_id
-        role = None
+        sequence = self.request_pieces[0].sequence
+        role = self.request_pieces[0].role
         for request_piece in self.request_pieces:
 
             if request_piece.conversation_id != conversation_id:
                 raise ValueError("Conversation ID mismatch.")
 
+            if request_piece.sequence != sequence:
+                raise ValueError("Inconsistent sequences within the same prompt request response entry.")
+
             if not request_piece.converted_value:
                 raise ValueError("Converted prompt text is None.")
 
-            if not role:
-                role = request_piece.role
-
-            elif role != request_piece.role:
+            if request_piece.role != role:
                 raise ValueError("Inconsistent roles within the same prompt request response entry.")
 
     def __str__(self):
@@ -49,18 +71,39 @@ class PromptRequestResponse:
             ret += str(request_piece) + "\n"
         return "\n".join([str(request_piece) for request_piece in self.request_pieces])
 
+    def filter_by_role(self, *, role: ChatMessageRole) -> Sequence[PromptRequestPiece]:
+        """
+        Filters the request pieces by role.
+
+        Args:
+            role (ChatMessageRole): The role to filter by.
+
+        Returns:
+            Sequence[PromptRequestPiece]: A sequence of request pieces that match the specified role.
+        """
+        return [piece for piece in self.request_pieces if piece.role == role]
+
     @staticmethod
     def flatten_to_prompt_request_pieces(
         request_responses: Sequence["PromptRequestResponse"],
-    ) -> list[PromptRequestPiece]:
+    ) -> MutableSequence[PromptRequestPiece]:
         if not request_responses:
             return []
-        response_pieces = []
+        response_pieces: MutableSequence[PromptRequestPiece] = []
 
         for response in request_responses:
             response_pieces.extend(response.request_pieces)
 
         return response_pieces
+
+    @classmethod
+    def from_prompt(cls, *, prompt: str, role: ChatMessageRole) -> "PromptRequestResponse":
+        piece = PromptRequestPiece(original_value=prompt, role=role)
+        return cls(request_pieces=[piece])
+
+    @classmethod
+    def from_system_prompt(cls, system_prompt: str) -> "PromptRequestResponse":
+        return cls.from_prompt(prompt=system_prompt, role="system")
 
 
 def group_conversation_request_pieces_by_sequence(
@@ -85,20 +128,22 @@ def group_conversation_request_pieces_by_sequence(
 
     Example:
     >>> request_pieces = [
-    >>>     PromptRequestPiece(conversation_id=1, sequence=1, text="Hello"),
-    >>>     PromptRequestPiece(conversation_id=1, sequence=2, text="How are you?"),
-    >>>     PromptRequestPiece(conversation_id=1, sequence=1, text="Hi"),
-    >>>     PromptRequestPiece(conversation_id=1, sequence=2, text="I'm good, thanks!")
+    >>>     PromptRequestPiece(conversation_id=1, sequence=1, text="Given this list of creatures, which is your
+    >>>     favorite:"),
+    >>>     PromptRequestPiece(conversation_id=1, sequence=2, text="Good question!"),
+    >>>     PromptRequestPiece(conversation_id=1, sequence=1, text="Raccoon, Narwhal, or Sloth?"),
+    >>>     PromptRequestPiece(conversation_id=1, sequence=2, text="I'd have to say racoons are my favorite!"),
     >>> ]
     >>> grouped_responses = group_conversation_request_pieces(request_pieces)
     ... [
     ...     PromptRequestResponse(request_pieces=[
-    ...         PromptRequestPiece(conversation_id=1, sequence=1, text="Hello"),
-    ...         PromptRequestPiece(conversation_id=1, sequence=1, text="Hi")
+    ...         PromptRequestPiece(conversation_id=1, sequence=1, text="Given this list of creatures, which is your
+    ...         favorite:"),
+    ...         PromptRequestPiece(conversation_id=1, sequence=1, text="Raccoon, Narwhal, or Sloth?")
     ...     ]),
     ...     PromptRequestResponse(request_pieces=[
-    ...         PromptRequestPiece(conversation_id=1, sequence=2, text="How are you?"),
-    ...         PromptRequestPiece(conversation_id=1, sequence=2, text="I'm good, thanks!")
+    ...         PromptRequestPiece(conversation_id=1, sequence=2, text="Good question!"),
+    ...         PromptRequestPiece(conversation_id=1, sequence=2, text="I'd have to say racoons are my favorite!")
     ...     ])
     ... ]
     """
@@ -115,9 +160,8 @@ def group_conversation_request_pieces_by_sequence(
             raise ValueError("Conversation ID must match.")
 
         if request_piece.sequence not in conversation_by_sequence:
-            conversation_by_sequence[request_piece.sequence] = [request_piece]
-        else:
-            conversation_by_sequence[request_piece.sequence].append(request_piece)
+            conversation_by_sequence[request_piece.sequence] = []
+        conversation_by_sequence[request_piece.sequence].append(request_piece)
 
     sorted_sequences = sorted(conversation_by_sequence.keys())
     return [PromptRequestResponse(conversation_by_sequence[seq]) for seq in sorted_sequences]
@@ -127,12 +171,16 @@ def construct_response_from_request(
     request: PromptRequestPiece,
     response_text_pieces: list[str],
     response_type: PromptDataType = "text",
-    prompt_metadata: Optional[Dict[str, str]] = None,
+    prompt_metadata: Optional[Dict[str, Union[str, int]]] = None,
     error: PromptResponseError = "none",
 ) -> PromptRequestResponse:
     """
     Constructs a response entry from a request.
     """
+
+    if request.prompt_metadata:
+        prompt_metadata = combine_dict(request.prompt_metadata, prompt_metadata or {})
+
     return PromptRequestResponse(
         request_pieces=[
             PromptRequestPiece(

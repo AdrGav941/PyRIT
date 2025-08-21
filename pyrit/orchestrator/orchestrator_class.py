@@ -5,12 +5,13 @@ import abc
 import ast
 import logging
 import uuid
-from typing import Optional
+from typing import Dict, List, Optional, Union
 
 from pyrit.common import default_values
 from pyrit.memory import CentralMemory, MemoryInterface
 from pyrit.models import Identifier, PromptDataType
-from pyrit.models.seed_prompt import SeedPrompt, SeedPromptGroup
+from pyrit.models.seed_prompt import SeedPrompt
+from pyrit.models.seed_prompt_group import SeedPromptGroup
 from pyrit.prompt_converter import PromptConverter
 from pyrit.prompt_normalizer.normalizer_request import NormalizerRequest
 from pyrit.prompt_normalizer.prompt_converter_configuration import (
@@ -44,14 +45,6 @@ class Orchestrator(abc.ABC, Identifier):
         if self._verbose:
             logging.basicConfig(level=logging.INFO)
 
-    def __enter__(self):
-        """Enter the runtime context related to this object."""
-        return self  # You can return self or another object that should be used in the with-statement.
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit the runtime context and perform any cleanup actions."""
-        self.dispose_db_engine()
-
     def dispose_db_engine(self) -> None:
         """
         Dispose database engine to release database connections and resources.
@@ -62,9 +55,9 @@ class Orchestrator(abc.ABC, Identifier):
         self,
         prompt_text: str,
         prompt_type: PromptDataType = "text",
-        conversation_id: str = None,
-        converters=None,
-        metadata=None,
+        conversation_id: Optional[str] = None,
+        converters: Optional[List[PromptConverter]] = None,
+        metadata: Optional[Dict[str, Union[str, int]]] = None,
     ) -> NormalizerRequest:
 
         if converters is None:
@@ -100,7 +93,7 @@ class Orchestrator(abc.ABC, Identifier):
         Retrieves the scores of the PromptRequestPieces associated with this orchestrator.
         These exist if a scorer is provided to the orchestrator.
         """
-        return self._memory.get_scores_by_orchestrator_id(orchestrator_id=self._id)
+        return self._memory.get_prompt_scores(orchestrator_id=self._id)
 
     def get_identifier(self) -> dict[str, str]:
         orchestrator_dict = {}

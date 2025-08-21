@@ -23,7 +23,7 @@ class Score:
     score_type: ScoreType
 
     # The type of the harms category (e.g. "hate" or "violence")
-    score_category: str
+    score_category: Optional[str]
 
     # Extra data the scorer provides around the rationale of the score
     score_rationale: str
@@ -54,11 +54,11 @@ class Score:
         score_value: str,
         score_value_description: str,
         score_type: ScoreType,
-        score_category: str,
+        score_category: Optional[str] = None,
         score_rationale: str,
         score_metadata: str,
-        scorer_class_identifier: Dict[str, str] = None,
         prompt_request_response_id: str | uuid.UUID,
+        scorer_class_identifier: Optional[Dict[str, str]] = None,
         timestamp: Optional[datetime] = None,
         task: Optional[str] = None,
     ):
@@ -77,7 +77,7 @@ class Score:
         self.score_category = score_category
         self.score_rationale = score_rationale
         self.score_metadata = score_metadata
-        self.scorer_class_identifier = scorer_class_identifier
+        self.scorer_class_identifier = scorer_class_identifier or {}
         self.prompt_request_response_id = prompt_request_response_id
         self.task = task
 
@@ -130,9 +130,10 @@ class Score:
         }
 
     def __str__(self):
+        category_str = f": {self.score_category or ''}"
         if self.scorer_class_identifier:
-            return f"{self.scorer_class_identifier['__type__']}: {self.score_category}: {self.score_value}"
-        return f": {self.score_category}: {self.score_value}"
+            return f"{self.scorer_class_identifier['__type__']}{category_str}: {self.score_value}"
+        return f"{category_str}: {self.score_value}"
 
     __repr__ = __str__
 
@@ -149,7 +150,7 @@ class UnvalidatedScore:
 
     score_value_description: str
     score_type: ScoreType
-    score_category: str
+    score_category: Optional[str]
     score_rationale: str
     score_metadata: str
     scorer_class_identifier: Dict[str, str]

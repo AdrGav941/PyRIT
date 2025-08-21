@@ -5,13 +5,18 @@ import abc
 import asyncio
 import re
 from dataclasses import dataclass
+from typing import get_args
 
 from pyrit.models import Identifier, PromptDataType
 
 
 @dataclass
 class ConverterResult:
+    """The result of a prompt conversion, containing the converted output and its type."""
+
+    #: The converted text output. This is the main result of the conversion.
     output_text: str
+    #: The data type of the converted output. Indicates the format/type of the ``output_text``.
     output_type: PromptDataType
 
     def __str__(self):
@@ -20,32 +25,50 @@ class ConverterResult:
 
 class PromptConverter(abc.ABC, Identifier):
     """
-    A prompt converter is responsible for converting prompts into a different representation.
-
+    Base class for converters that transform prompts into a different representation or format.
     """
+
+    def __init__(self):
+        """
+        Initializes the prompt converter.
+        """
+        super().__init__()
 
     @abc.abstractmethod
     async def convert_async(self, *, prompt: str, input_type: PromptDataType = "text") -> ConverterResult:
         """
-        Converts the given prompts into a different representation
+        Converts the given prompt into the target format supported by the converter.
 
         Args:
-            prompt: The prompt to be converted.
+            prompt (str): The prompt to be converted.
+            input_type (PromptDataType): The type of input data.
 
         Returns:
-            str: The converted representation of the prompts.
+            ConverterResult: The result containing the converted output and its type.
         """
 
     @abc.abstractmethod
     def input_supported(self, input_type: PromptDataType) -> bool:
         """
-        Checks if the input type is supported by the converter
+        Checks if the input type is supported by the converter.
 
         Args:
-            input_type: The input type to check
+            input_type (PromptDataType): The input type to check.
 
         Returns:
-            bool: True if the input type is supported, False otherwise
+            bool: True if the input type is supported, False otherwise.
+        """
+
+    @abc.abstractmethod
+    def output_supported(self, output_type: PromptDataType) -> bool:
+        """
+        Checks if the output type is supported by the converter.
+
+        Args:
+            output_type (PromptDataType): The output type to check.
+
+        Returns:
+            bool: True if the output type is supported, False otherwise.
         """
 
     async def convert_tokens_async(
@@ -96,7 +119,33 @@ class PromptConverter(abc.ABC, Identifier):
         return result
 
     def get_identifier(self):
+        """
+        Returns an identifier dictionary for the converter.
+
+        Returns:
+            dict: The identifier dictionary.
+        """
         public_attributes = {}
         public_attributes["__type__"] = self.__class__.__name__
         public_attributes["__module__"] = self.__class__.__module__
         return public_attributes
+
+    @property
+    def supported_input_types(self) -> list[PromptDataType]:
+        """
+        Returns a list of supported input types for the converter.
+
+        Returns:
+            list[PromptDataType]: A list of supported input types.
+        """
+        return [data_type for data_type in get_args(PromptDataType) if self.input_supported(data_type)]
+
+    @property
+    def supported_output_types(self) -> list[PromptDataType]:
+        """
+        Returns a list of supported output types for the converter.
+
+        Returns:
+            list[PromptDataType]: A list of supported output types.
+        """
+        return [data_type for data_type in get_args(PromptDataType) if self.output_supported(data_type)]

@@ -15,7 +15,10 @@ skipped_urls = [
     "https://gandalf.lakera.ai/api/send-message",
     "https://code.visualstudio.com/Download",  # This will block python requests
     "https://platform.openai.com/docs/api-reference/introduction",  # blocks python requests
+    "https://platform.openai.com/docs/api-reference/responses",  # blocks python requests
     "https://www.anthropic.com/research/many-shot-jailbreaking",  # blocks python requests
+    "https://code.visualstudio.com/docs/devcontainers/containers",
+    "https://stackoverflow.com/questions/77134272/pip-install-dev-with-pyproject-toml-not-working",
 ]
 
 custom_myst_references = ["notebook_tests"]
@@ -25,7 +28,7 @@ URL_PATTERN = re.compile(r'\[.*?\]\((.*?)\)|href="([^"]+)"|src="([^"]+)"')
 
 
 def extract_urls(file_path):
-    with open(file_path, "r") as file:
+    with open(file_path, "r", encoding="utf-8") as file:
         content = file.read()
     matches = URL_PATTERN.findall(content)
     # Flatten the list of tuples and filter out empty strings
@@ -104,7 +107,10 @@ def check_links_in_file(file_path):
 if __name__ == "__main__":
     files = sys.argv[1:]
     all_broken_urls = {}
+    skipped_files = ["doc/blog/"]
     for file_path in files:
+        if any(file_path.startswith(skipped) for skipped in skipped_files):
+            continue
         print(f"Checking links in {file_path}")
         broken_urls = check_links_in_file(file_path)
         if broken_urls:

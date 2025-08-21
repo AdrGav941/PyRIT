@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.4
+#       jupytext_version: 1.17.2
 #   kernelspec:
 #     display_name: pyrit-dev
 #     language: python
@@ -14,7 +14,7 @@
 # ---
 
 # %% [markdown]
-# # HuggingFace Chat Target Testing - optional
+# # HuggingFace Chat Target - optional
 #
 # This notebook is designed to demonstrate **instruction models** that use a **chat template**, allowing users to experiment with structured chat-based interactions.  Non-instruct models are excluded to ensure consistency and reliability in the chat-based interactions. More instruct models can be explored on Hugging Face.
 #
@@ -47,7 +47,7 @@
 import time
 
 from pyrit.common import IN_MEMORY, initialize_pyrit
-from pyrit.orchestrator import PromptSendingOrchestrator
+from pyrit.executor.attack import AttackExecutor, PromptSendingAttack
 from pyrit.prompt_target import HuggingFaceChatTarget
 
 initialize_pyrit(memory_db_type=IN_MEMORY)
@@ -67,14 +67,17 @@ try:
     # Initialize HuggingFaceChatTarget with the current model
     target = HuggingFaceChatTarget(model_id=model_id, use_cuda=False, tensor_format="pt", max_new_tokens=30)
 
-    # Initialize the orchestrator
-    orchestrator = PromptSendingOrchestrator(objective_target=target, verbose=False)
+    # Initialize the attack
+    attack = PromptSendingAttack(objective_target=target)
 
     # Record start time
     start_time = time.time()
 
     # Send prompts asynchronously
-    responses = await orchestrator.send_prompts_async(prompt_list=prompt_list)  # type: ignore
+    responses = await AttackExecutor().execute_multi_objective_attack_async(  # type: ignore
+        attack=attack,
+        objectives=prompt_list,
+    )
 
     # Record end time
     end_time = time.time()

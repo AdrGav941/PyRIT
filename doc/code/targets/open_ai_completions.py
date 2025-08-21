@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.4
+#       jupytext_version: 1.17.2
 #   kernelspec:
 #     display_name: pyrit-dev
 #     language: python
@@ -20,9 +20,10 @@
 #
 # Once you are configured, then you will be able to get completions for your text.
 
-# %%
 from pyrit.common import IN_MEMORY, initialize_pyrit
-from pyrit.orchestrator import PromptSendingOrchestrator
+
+# %%
+from pyrit.executor.attack import ConsoleAttackResultPrinter, PromptSendingAttack
 from pyrit.prompt_target import OpenAICompletionTarget
 
 initialize_pyrit(memory_db_type=IN_MEMORY)
@@ -30,9 +31,6 @@ initialize_pyrit(memory_db_type=IN_MEMORY)
 # Note that max_tokens will default to 16 for completions, so you may want to set the upper limit of allowed tokens for a longer response.
 target = OpenAICompletionTarget(max_tokens=2048)
 
-orchestrator = PromptSendingOrchestrator(objective_target=target)
-response = await orchestrator.send_prompts_async(prompt_list=["Hello! Who are you?"])  # type: ignore
-await orchestrator.print_conversations_async()  # type: ignore
-
-# %%
-target.dispose_db_engine()
+attack = PromptSendingAttack(objective_target=target)
+result = await attack.execute_async(objective="Hello! Who are you?")  # type: ignore
+await ConsoleAttackResultPrinter().print_conversation_async(result=result)  # type: ignore

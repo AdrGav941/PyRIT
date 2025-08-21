@@ -4,9 +4,9 @@
 import logging
 from contextlib import closing
 from pathlib import Path
-from typing import MutableSequence, Optional, Sequence, Union
+from typing import MutableSequence, Optional, Sequence, TypeVar, Union
 
-from sqlalchemy import MetaData, and_, create_engine
+from sqlalchemy import and_, create_engine
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload, sessionmaker
@@ -15,10 +15,18 @@ from sqlalchemy.orm.session import Session
 from pyrit.common.path import DB_DATA_PATH
 from pyrit.common.singleton import Singleton
 from pyrit.memory.memory_interface import MemoryInterface
-from pyrit.memory.memory_models import Base, EmbeddingDataEntry, PromptMemoryEntry
+from pyrit.memory.memory_models import (
+    AttackResultEntry,
+    Base,
+    EmbeddingDataEntry,
+    PromptMemoryEntry,
+    SeedPromptEntry,
+)
 from pyrit.models import DiskStorageIO, PromptRequestPiece
 
 logger = logging.getLogger(__name__)
+
+Model = TypeVar("Model")
 
 
 class DuckDBMemory(MemoryInterface, metaclass=Singleton):
@@ -34,7 +42,7 @@ class DuckDBMemory(MemoryInterface, metaclass=Singleton):
     def __init__(
         self,
         *,
-        db_path: Union[Path, str] = None,
+        db_path: Optional[Union[Path, str]] = None,
         verbose: bool = False,
     ):
         super(DuckDBMemory, self).__init__()
@@ -84,19 +92,29 @@ class DuckDBMemory(MemoryInterface, metaclass=Singleton):
         except Exception as e:
             logger.error(f"Error during table creation: {e}")
 
-    def get_all_embeddings(self) -> list[EmbeddingDataEntry]:
+    def get_all_embeddings(self) -> Sequence[EmbeddingDataEntry]:
         """
         Fetches all entries from the specified table and returns them as model instances.
         """
-        result: list[EmbeddingDataEntry] = self._query_entries(EmbeddingDataEntry)
+        result: Sequence[EmbeddingDataEntry] = self._query_entries(EmbeddingDataEntry)
         return result
 
     def _get_prompt_pieces_memory_label_conditions(self, *, memory_labels: dict[str, str]):
         conditions = [PromptMemoryEntry.labels.op("->>")(key) == value for key, value in memory_labels.items()]
         return and_(*conditions)
 
+    def _get_prompt_pieces_prompt_metadata_conditions(self, *, prompt_metadata):
+        conditions = [
+            PromptMemoryEntry.prompt_metadata.op("->>")(key) == value for key, value in prompt_metadata.items()
+        ]
+        return and_(*conditions)
+
     def _get_prompt_pieces_orchestrator_conditions(self, *, orchestrator_id: str):
         return PromptMemoryEntry.orchestrator_identifier.op("->>")("id") == orchestrator_id
+
+    def _get_seed_prompts_metadata_conditions(self, *, metadata: dict[str, Union[str, int]]):
+        conditions = [SeedPromptEntry.prompt_metadata.op("->>")(key) == value for key, value in metadata.items()]
+        return and_(*conditions)
 
     def add_request_pieces_to_memory(self, *, request_pieces: Sequence[PromptRequestPiece]) -> None:
         """
@@ -105,13 +123,13 @@ class DuckDBMemory(MemoryInterface, metaclass=Singleton):
         """
         self._insert_entries(entries=[PromptMemoryEntry(entry=piece) for piece in request_pieces])
 
-    def _add_embeddings_to_memory(self, *, embedding_data: list[EmbeddingDataEntry]) -> None:
+    def _add_embeddings_to_memory(self, *, embedding_data: Sequence[EmbeddingDataEntry]) -> None:
         """
         Inserts embedding data into memory storage
         """
         self._insert_entries(entries=embedding_data)
 
-    def get_all_table_models(self) -> list[Base]:  # type: ignore
+    def get_all_table_models(self) -> list[type[Base]]:  # type: ignore
         """
         Returns a list of all table models used in the database by inspecting the Base registry.
 
@@ -142,7 +160,7 @@ class DuckDBMemory(MemoryInterface, metaclass=Singleton):
                 session.rollback()
                 logger.exception(f"Error inserting entry into the table: {e}")
 
-    def _insert_entries(self, *, entries: list[Base]) -> None:  # type: ignore
+    def _insert_entries(self, *, entries: Sequence[Base]) -> None:  # type: ignore
         """Inserts multiple entries into the database."""
         with closing(self.get_session()) as session:
             try:
@@ -154,8 +172,8 @@ class DuckDBMemory(MemoryInterface, metaclass=Singleton):
                 raise
 
     def _query_entries(
-        self, model, *, conditions: Optional = None, distinct: bool = False, join_scores: bool = False  # type: ignore
-    ) -> list[Base]:
+        self, Model, *, conditions: Optional = None, distinct: bool = False, join_scores: bool = False  # type: ignore
+    ) -> MutableSequence[Model]:
         """
         Fetches data from the specified table model with optional conditions.
 
@@ -170,16 +188,21 @@ class DuckDBMemory(MemoryInterface, metaclass=Singleton):
         """
         with closing(self.get_session()) as session:
             try:
-                query = session.query(model)
-                if join_scores and model == PromptMemoryEntry:
+                query = session.query(Model)
+                if join_scores and Model == PromptMemoryEntry:
                     query = query.options(joinedload(PromptMemoryEntry.scores))
+                elif Model == AttackResultEntry:
+                    query = query.options(
+                        joinedload(AttackResultEntry.last_response).joinedload(PromptMemoryEntry.scores),
+                        joinedload(AttackResultEntry.last_score),
+                    )
                 if conditions is not None:
                     query = query.filter(conditions)
                 if distinct:
                     return query.distinct().all()
                 return query.all()
             except SQLAlchemyError as e:
-                logger.exception(f"Error fetching data from table {model.__tablename__}: {e}")
+                logger.exception(f"Error fetching data from table {Model.__tablename__}: {e}")
                 return []
 
     def _update_entries(self, *, entries: MutableSequence[Base], update_fields: dict) -> bool:  # type: ignore
@@ -187,7 +210,7 @@ class DuckDBMemory(MemoryInterface, metaclass=Singleton):
         Updates the given entries with the specified field values.
 
         Args:
-            entries (list[Base]): A list of SQLAlchemy model instances to be updated.
+            entries (Sequence[Base]): A list of SQLAlchemy model instances to be updated.
             update_fields (dict): A dictionary of field names and their new values.
 
         Returns:
@@ -231,21 +254,11 @@ class DuckDBMemory(MemoryInterface, metaclass=Singleton):
         table_models = self.get_all_table_models()
 
         for model in table_models:
-            data = self._query_entries(model)
+            data: MutableSequence[Base] = self._query_entries(model)
             table_name = model.__tablename__
             file_extension = f".{export_type}"
             file_path = DB_DATA_PATH / f"{table_name}{file_extension}"
             self.exporter.export_data(data, file_path=file_path, export_type=export_type)
-
-    def print_schema(self):
-        metadata = MetaData()
-        metadata.reflect(bind=self.engine)
-
-        for table_name in metadata.tables:
-            table = metadata.tables[table_name]
-            print(f"Schema for {table_name}:")
-            for column in table.columns:
-                print(f"  Column {column.name} ({column.type})")
 
     def dispose_engine(self):
         """

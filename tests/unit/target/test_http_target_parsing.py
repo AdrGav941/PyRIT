@@ -13,6 +13,10 @@ from pyrit.prompt_target.http_target.http_target_callback_functions import (
     get_http_target_regex_matching_callback_function,
 )
 
+sample_request = (
+    'POST / HTTP/1.1\nHost: example.com\nContent-Type: application/json\n\n{"prompt": "{PLACEHOLDER_PROMPT}"}'
+)
+
 
 @pytest.fixture
 def mock_callback_function() -> Callable:
@@ -21,10 +25,7 @@ def mock_callback_function() -> Callable:
 
 
 @pytest.fixture
-def mock_http_target(mock_callback_function) -> HTTPTarget:
-    sample_request = (
-        'POST / HTTP/1.1\nHost: example.com\nContent-Type: application/json\n\n{"prompt": "{PLACEHOLDER_PROMPT}"}'
-    )
+def mock_http_target(mock_callback_function, duckdb_instance) -> HTTPTarget:
     return HTTPTarget(
         http_request=sample_request,
         prompt_regex_string="{PLACEHOLDER_PROMPT}",
@@ -51,10 +52,10 @@ def test_parse_json_response_match(mock_http_response, mock_callback_function):
 
 
 def test_parse_raw_http_request(mock_http_target):
-    headers, body, url, method, version = mock_http_target.parse_raw_http_request()
+    headers, body, url, method, version = mock_http_target.parse_raw_http_request(sample_request)
     assert url == "https://example.com/"
     assert method == "POST"
-    assert headers == {"Host": "example.com", "Content-Type": "application/json"}
+    assert headers == {"host": "example.com", "content-type": "application/json"}
     assert body == '{"prompt": "{PLACEHOLDER_PROMPT}"}'
     assert version == "HTTP/1.1"
 
@@ -73,3 +74,19 @@ def test_parse_regex_response_match():
     parse_html_response = get_http_target_regex_matching_callback_function(r"Match: (\d+)")
     result = parse_html_response(mock_response)
     assert result == "Match: 1234"
+
+
+def test_parse_json_response_positive_array_index():
+    mock_response = MagicMock()
+    mock_response.content = b'{"data": [{"items": ["a", "b", "c"]}, {"items": ["x", "y", "z"]}]}'
+    parse_json_response = get_http_target_json_response_callback_function(key="data[0].items[1]")
+    result = parse_json_response(mock_response)
+    assert result == "b"
+
+
+def test_parse_json_response_negative_array_index():
+    mock_response = MagicMock()
+    mock_response.content = b'{"data": [{"items": ["a", "b", "c"]}, {"items": ["x", "y", "z"]}]}'
+    parse_json_response = get_http_target_json_response_callback_function(key="data[0].items[-1]")
+    result = parse_json_response(mock_response)
+    assert result == "c"

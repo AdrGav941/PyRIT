@@ -30,7 +30,7 @@ class PromptShieldScorer(Scorer):
         self._prompt_target = prompt_shield_target
         self.scorer_type = "true_false"
 
-    async def score_async(self, request_response: PromptRequestPiece, *, task: Optional[str] = None) -> list[Score]:
+    async def _score_async(self, request_response: PromptRequestPiece, *, task: Optional[str] = None) -> list[Score]:
         self.validate(request_response=request_response)
 
         self._conversation_id = str(uuid.uuid4())
@@ -52,7 +52,7 @@ class PromptShieldScorer(Scorer):
         # The body of the Prompt Shield response
         target_response = await self._prompt_target.send_prompt_async(prompt_request=request)
 
-        response: str = target_response.request_pieces[0].converted_value
+        response: str = target_response.get_value()
 
         # Whether or not any of the documents or userPrompt got flagged as an attack
         result: bool = any(self._parse_response_to_boolean_list(response))
@@ -69,7 +69,6 @@ class PromptShieldScorer(Scorer):
             task=task,
         )
 
-        self._memory.add_scores_to_memory(scores=[score])
         return [score]
 
     def _parse_response_to_boolean_list(self, response: str) -> list[bool]:
