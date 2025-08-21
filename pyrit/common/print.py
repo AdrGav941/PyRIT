@@ -4,7 +4,24 @@
 import textwrap
 
 import termcolor
-from termcolor._types import Color
+from typing import Literal
+
+# "termcolor" does not expose a public ``Color`` type, and importing from the
+# private ``termcolor._types`` module causes ``ModuleNotFoundError`` when the
+# internal structure of the package changes.  The project only uses the string
+# colour names accepted by ``termcolor.cprint`` so we provide a local, typed
+# alias instead of depending on the private module.
+
+Color = Literal[
+    "grey",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+]
 
 from pyrit.models import ChatMessage
 
@@ -13,7 +30,7 @@ def print_chat_messages_with_color(
     messages: list[ChatMessage],
     max_content_character_width: int = 80,
     left_padding_width: int = 20,
-    custom_colors: dict[str, Color] = None,
+    custom_colors: dict[str, Color] | None = None,
 ) -> None:
     """Print chat messages with color to console.
 
