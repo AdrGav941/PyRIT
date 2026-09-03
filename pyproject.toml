@@ -116,6 +116,9 @@ gcg = [
     "sentencepiece>=0.2.0",
     "torch>=2.7.0",
 ]
+github-copilot = [
+    "github-copilot-sdk>=1.0.11,<2; python_version >= '3.11'",
+]
 playwright = [
     "flask>=3.1.3",
     "ollama>=0.5.1",
@@ -151,6 +154,7 @@ all = [
     "azure-ai-ml>=1.32.0",
     "azure-cognitiveservices-speech>=1.44.0",
     "flask>=3.1.3",
+    "github-copilot-sdk>=1.0.11,<2; python_version >= '3.11'",
     "ipykernel>=6.29.5",
     "jupyter>=1.1.1",
     "litellm>=1.83.0,<1.92.0",  # 1.92.0+ drops the universal wheel (no mac/musl/old-glibc/win-arm64); see litellm group

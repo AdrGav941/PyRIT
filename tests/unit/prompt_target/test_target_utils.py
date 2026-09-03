@@ -9,6 +9,7 @@ import pytest
 from pyrit.exceptions import PyritException
 from pyrit.models import MessagePiece
 from pyrit.prompt_target.common.utils import (
+    apply_request_rate_limit_async,
     build_empty_truncated_response,
     limit_requests_per_minute,
     validate_temperature,
@@ -110,6 +111,16 @@ async def test_limit_requests_per_minute_zero_rpm():
         result = await decorated(mock_self, message="test")
         mock_sleep.assert_not_called()
     assert result == "response"
+
+
+async def test_apply_request_rate_limit_async_with_rpm() -> None:
+    mock_target = MagicMock()
+    mock_target._max_requests_per_minute = 30
+
+    with patch("asyncio.sleep") as mock_sleep:
+        await apply_request_rate_limit_async(target=mock_target)
+
+    mock_sleep.assert_called_once_with(2.0)
 
 
 def test_build_empty_truncated_response_returns_empty_message():

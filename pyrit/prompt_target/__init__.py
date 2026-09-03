@@ -55,11 +55,13 @@ from pyrit.prompt_target.websocket_copilot_target import WebSocketCopilotTarget
 from pyrit.prompt_target.websocket_target import WebsocketTarget
 
 if TYPE_CHECKING:
+    from pyrit.prompt_target.github_copilot_target import GitHubCopilotTarget
     from pyrit.prompt_target.hugging_face.hugging_face_chat_target import HuggingFaceChatTarget
 
 # Keep optional inference targets lazy so package imports do not load their
 # target-specific runtime modules.
 _LAZY_IMPORTS: dict[str, str] = {
+    "GitHubCopilotTarget": "pyrit.prompt_target.github_copilot_target",
     "HuggingFaceChatTarget": "pyrit.prompt_target.hugging_face.hugging_face_chat_target",
 }
 
@@ -83,6 +85,7 @@ __all__ = [
     "ConversationNormalizationPipeline",
     "GandalfLevel",
     "GandalfTarget",
+    "GitHubCopilotTarget",
     "get_http_target_json_response_callback_function",
     "get_http_target_regex_matching_callback_function",
     "HTTPTarget",

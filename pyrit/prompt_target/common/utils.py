@@ -60,13 +60,22 @@ def limit_requests_per_minute(func: Callable[..., Any]) -> Callable[..., Any]:
 
     async def set_max_rpm_async(*args: Any, **kwargs: Any) -> Any:
         self = args[0]
-        rpm = getattr(self, "_max_requests_per_minute", None)
-        if rpm and rpm > 0:
-            await asyncio.sleep(60 / rpm)
-
+        await apply_request_rate_limit_async(target=self)
         return await func(*args, **kwargs)
 
     return set_max_rpm_async
+
+
+async def apply_request_rate_limit_async(*, target: Any) -> None:
+    """
+    Apply the standard target request-rate delay.
+
+    Args:
+        target (Any): Target carrying ``_max_requests_per_minute``.
+    """
+    rpm = getattr(target, "_max_requests_per_minute", None)
+    if rpm and rpm > 0:
+        await asyncio.sleep(60 / rpm)
 
 
 def build_empty_truncated_response(*, request: MessagePiece) -> Message:
