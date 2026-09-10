@@ -72,6 +72,7 @@ _IMPORT_PYRIT_FORBIDDEN = [
     "alembic",
     "av",
     "azure.storage.blob",
+    "copilot",
     "openai",
     "pandas",
     "scipy",
@@ -83,6 +84,7 @@ _IMPORT_PYRIT_FORBIDDEN = [
 # Heavy modules that should not be loaded by importing the PromptTarget base class.
 _PROMPT_TARGET_FORBIDDEN = [
     "av",
+    "copilot",
     "pandas",
     "scipy",
     "torch",
@@ -90,6 +92,7 @@ _PROMPT_TARGET_FORBIDDEN = [
 ]
 
 _TARGET_CATALOG_FORBIDDEN = [
+    "copilot",
     "huggingface_hub",
     "torch",
     "transformers",
@@ -160,17 +163,26 @@ class TestImportGuards:
             f"Ensure heavy subclass imports use __getattr__ lazy loading in __init__.py."
         )
 
-    def test_target_catalog_discovery_does_not_load_inference_frameworks(self) -> None:
-        """Full target discovery includes Hugging Face without importing its runtime frameworks."""
+    def test_github_copilot_target_public_import_does_not_load_sdk(self) -> None:
+        """Importing the target class must not load its optional SDK."""
+        loaded = _check_forbidden_imports(
+            import_statement="from pyrit.prompt_target import GitHubCopilotTarget",
+            forbidden=["copilot"],
+        )
+        assert not loaded, f"GitHubCopilotTarget public import loaded optional SDK modules: {loaded}"
+
+    def test_target_catalog_discovery_does_not_load_optional_dependencies(self) -> None:
+        """Full discovery includes optional targets without importing their runtime dependencies."""
         loaded = _check_forbidden_imports(
             import_statement=(
                 "from pyrit.registry import TargetRegistry\n"
                 "metadata = TargetRegistry.get_registry_singleton().get_all_registered_class_metadata()\n"
-                "assert any(item.class_name == 'HuggingFaceChatTarget' for item in metadata)"
+                "assert any(item.class_name == 'HuggingFaceChatTarget' for item in metadata)\n"
+                "assert any(item.class_name == 'GitHubCopilotTarget' for item in metadata)"
             ),
             forbidden=_TARGET_CATALOG_FORBIDDEN,
         )
         assert not loaded, (
-            f"Target catalog discovery loaded inference frameworks: {loaded}. "
+            f"Target catalog discovery loaded optional target dependencies: {loaded}. "
             f"Move target-specific runtime imports to construction or execution paths."
         )
